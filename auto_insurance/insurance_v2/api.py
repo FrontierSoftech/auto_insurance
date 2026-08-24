@@ -35,6 +35,49 @@ def get_category_suppliers(item_code, company):
 
 
 @frappe.whitelist()
+def filter_category_supplier_addresses(doctype, txt, searchfield, start, page_len, filters):
+	"""Link field query for `custom_insurance_supplier_address` on Sales Invoice Item.
+	Restricts the address dropdown to the supplier_address values configured on the
+	item's Item Category rows for the invoice's Company + selected Supplier.
+	"""
+	item_code = (filters or {}).get("item_code")
+	company = (filters or {}).get("company")
+	supplier = (filters or {}).get("supplier")
+	if not (item_code and company and supplier):
+		return []
+	item_category = frappe.db.get_value("Item", item_code, "custom_item_category")
+	if not item_category:
+		return []
+	rows = frappe.get_all(
+		"Item Category Supplier",
+		filters={"parent": item_category, "company": company, "supplier": supplier},
+		pluck="supplier_address",
+		order_by="idx asc",
+	)
+	addresses = [a for a in rows if a]
+	if not addresses:
+		return []
+
+	txt_like = f"%{txt or ''}%"
+	return frappe.db.sql(
+		"""
+		SELECT name, city, country
+		FROM `tabAddress`
+		WHERE name IN %(addresses)s
+		  AND (name LIKE %(txt)s OR city LIKE %(txt)s OR address_title LIKE %(txt)s)
+		ORDER BY name
+		LIMIT %(start)s, %(page_len)s
+		""",
+		{
+			"addresses": tuple(addresses),
+			"txt": txt_like,
+			"start": int(start or 0),
+			"page_len": int(page_len or 20),
+		},
+	)
+
+
+@frappe.whitelist()
 def filter_category_suppliers(doctype, txt, searchfield, start, page_len, filters):
 	"""Link field query for `custom_insurance_supplier` on Sales Invoice Item.
 	Restricts the supplier dropdown to the rows configured on the item's Item Category
